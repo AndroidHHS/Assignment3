@@ -35,6 +35,25 @@ public class OfficesProvider extends ContentProvider {
         Cursor c;
 
         switch (match) {
+            case OfficeContract.ALL_ROWS_INFO:
+
+                c = db.query(OfficeContract.INFO, projection,
+                        selection, selectionArgs,
+                        null, null, sortOrder);
+                c.setNotificationUri(
+                        getContext().getContentResolver(),
+                        OfficeContract.CONTENT_URI_INFO);
+                break;
+            case OfficeContract.SINGLE_ROW_INFO:
+
+                long idInfo = ContentUris.parseId(uri);
+                c = db.query(OfficeContract.INFO, projection,
+                        OfficeContract.ColumnsLocation._ID + " = " + idInfo,
+                        selectionArgs, null, null, sortOrder);
+                c.setNotificationUri(
+                        getContext().getContentResolver(),
+                        OfficeContract.CONTENT_URI_INFO);
+                break;
             case OfficeContract.ALL_ROWS:
 
                 c = db.query(OfficeContract.LOCATION, projection,
@@ -48,7 +67,7 @@ public class OfficesProvider extends ContentProvider {
 
                 long idLocation = ContentUris.parseId(uri);
                 c = db.query(OfficeContract.LOCATION, projection,
-                        OfficeContract.Columns._ID + " = " + idLocation,
+                        OfficeContract.ColumnsLocation._ID + " = " + idLocation,
                         selectionArgs, null, null, sortOrder);
                 c.setNotificationUri(
                         getContext().getContentResolver(),
@@ -63,6 +82,15 @@ public class OfficesProvider extends ContentProvider {
     @Override
     public String getType(Uri uri) {
         switch (OfficeContract.URI_MATCHER.match(uri)) {
+
+            //---get all INFO companies---
+            case OfficeContract.ALL_ROWS_INFO:
+                return OfficeContract.MULTIPLE_MIME_INFO;
+
+            //---get all INFO company---
+            case OfficeContract.SINGLE_ROW_INFO:
+                return OfficeContract.SINGLE_MIME_INFO;
+
             //---get all offices---
             case OfficeContract.ALL_ROWS:
                 return OfficeContract.MULTIPLE_MIME;
@@ -78,9 +106,11 @@ public class OfficesProvider extends ContentProvider {
 
     @Override
     public Uri insert(Uri uri, ContentValues values) {
-        if (OfficeContract.URI_MATCHER.match(uri) != OfficeContract.ALL_ROWS) {
+        if (OfficeContract.URI_MATCHER.match(uri) != OfficeContract.ALL_ROWS_INFO &&
+                OfficeContract.URI_MATCHER.match(uri) != OfficeContract.ALL_ROWS) {
             throw new IllegalArgumentException("Unsupported URI : " + uri);
         }
+
         ContentValues contentValues;
         if (values != null) {
             contentValues = new ContentValues(values);
@@ -91,17 +121,31 @@ public class OfficesProvider extends ContentProvider {
         // If necessary, check values
         // Inserting new row
         SQLiteDatabase db = databaseHelper.getWritableDatabase();
-        long rowId = db.insert(OfficeContract.LOCATION,
-                null, contentValues);
-        if (rowId > 0) {
-            Uri uri_location =
-                    ContentUris.withAppendedId(
-                            OfficeContract.CONTENT_URI, rowId);
-            getContext().getContentResolver().
-                    notifyChange(uri_location, null);
-            return uri_location;
+        if (OfficeContract.URI_MATCHER.match(uri) == OfficeContract.ALL_ROWS_INFO) {
+            long rowId = db.insert(OfficeContract.INFO,
+                    null, contentValues);
+            if (rowId > 0) {
+                Uri uri_info =
+                        ContentUris.withAppendedId(
+                                OfficeContract.CONTENT_URI_INFO, rowId);
+                getContext().getContentResolver().
+                        notifyChange(uri_info, null);
+                return uri_info;
+            }
+            throw new SQLException("Failure to insert row in : " + uri);
+        } else {
+            long rowId = db.insert(OfficeContract.LOCATION,
+                    null, contentValues);
+            if (rowId > 0) {
+                Uri uri_location =
+                        ContentUris.withAppendedId(
+                                OfficeContract.CONTENT_URI, rowId);
+                getContext().getContentResolver().
+                        notifyChange(uri_location, null);
+                return uri_location;
+            }
+            throw new SQLException("Failure to insert row in : " + uri);
         }
-        throw new SQLException("Failure to insert row in : " + uri);
     }
 
 
@@ -114,6 +158,22 @@ public class OfficesProvider extends ContentProvider {
         int affected;
 
         switch (match) {
+            case OfficeContract.ALL_ROWS_INFO:
+                affected = db.delete(OfficeContract.INFO,
+                        selection,
+                        selectionArgs);
+                break;
+            case OfficeContract.SINGLE_ROW_INFO:
+                long idInfo = ContentUris.parseId(uri);
+                affected = db.delete(OfficeContract.INFO,
+                        OfficeContract.ColumnsInfo._ID + "=" + idInfo
+                                + (!TextUtils.isEmpty(selection) ?
+                                " AND (" + selection + ')' : ""),
+                        selectionArgs);
+                // Report change associated with uri
+                getContext().getContentResolver().
+                        notifyChange(uri, null);
+                break;
             case OfficeContract.ALL_ROWS:
                 affected = db.delete(OfficeContract.LOCATION,
                         selection,
@@ -122,7 +182,7 @@ public class OfficesProvider extends ContentProvider {
             case OfficeContract.SINGLE_ROW:
                 long idLocation = ContentUris.parseId(uri);
                 affected = db.delete(OfficeContract.LOCATION,
-                        OfficeContract.Columns._ID + "=" + idLocation
+                        OfficeContract.ColumnsLocation._ID + "=" + idLocation
                                 + (!TextUtils.isEmpty(selection) ?
                                 " AND (" + selection + ')' : ""),
                         selectionArgs);
@@ -131,8 +191,7 @@ public class OfficesProvider extends ContentProvider {
                         notifyChange(uri, null);
                 break;
             default:
-                throw new IllegalArgumentException("Location unknown: " +
-                        uri);
+                throw new IllegalArgumentException("Unknown data: " + uri);
         }
         return affected;
     }
@@ -142,6 +201,18 @@ public class OfficesProvider extends ContentProvider {
         SQLiteDatabase db = databaseHelper.getWritableDatabase();
         int affected;
         switch (OfficeContract.URI_MATCHER.match(uri)) {
+            case OfficeContract.ALL_ROWS_INFO:
+                affected = db.update(OfficeContract.INFO, values,
+                        selection, selectionArgs);
+                break;
+            case OfficeContract.SINGLE_ROW_INFO:
+                String idInfo = uri.getPathSegments().get(1);
+                affected = db.update(OfficeContract.LOCATION, values,
+                        OfficeContract.ColumnsInfo._ID + "=" + idInfo
+                                + (!TextUtils.isEmpty(selection) ?
+                                " AND (" + selection + ')' : ""),
+                        selectionArgs);
+                break;
             case OfficeContract.ALL_ROWS:
                 affected = db.update(OfficeContract.LOCATION, values,
                         selection, selectionArgs);
@@ -149,7 +220,7 @@ public class OfficesProvider extends ContentProvider {
             case OfficeContract.SINGLE_ROW:
                 String idLocation = uri.getPathSegments().get(1);
                 affected = db.update(OfficeContract.LOCATION, values,
-                        OfficeContract.Columns._ID + "=" + idLocation
+                        OfficeContract.ColumnsLocation._ID + "=" + idLocation
                                 + (!TextUtils.isEmpty(selection) ?
                                 " AND (" + selection + ')' : ""),
                         selectionArgs);
